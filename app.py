@@ -1,46 +1,52 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-import joblib
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import JSONResponse
+import tensorflow as tf
+import numpy as np
+from PIL import Image
+import io
 
-# Load the saved models + vectorizer
-bundle = joblib.load("news_models.pkl")
-vectorizer = bundle["vectorizer"]
-LR = bundle["LR"]
-DT = bundle["DT"]
-GB = bundle["GB"]
-RF = bundle["RF"]
+app = FastAPI(title="Potato Disease Detection API")
 
-# FastAPI app
-app = FastAPI(title="Fake News Detection API")
+# Load trained model
+model = tf.keras.models.load_model("potato_model.h5")
 
-# Input schema
-class NewsInput(BaseModel):
-    text: str
+# ⚠️ Change order ONLY if your training labels order was different
+class_names = [
+    "Healthy",
+    "Early Blight",
+    "Late Blight"
+]
 
-# Output label function
-def output_label(n):
-    return "✅ Real News" if n == 1 else "❌ Fake News"
+IMAGE_SIZE = 256
 
-# Root endpoint
+def preprocess_image(image_bytes):
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    image = image.resize((IMAGE_SIZE, IMAGE_SIZE))
+    image = np.array(image) / 255.0   # Same normalization as training
+    image = np.expand_dims(image, axis=0)
+    return image
+
 @app.get("/")
 def home():
-    return {"message": "Welcome to Fake News Detection API! Use /predict to test."}
+    return {"message": "Potato Disease Detection API is running"}
 
-# Prediction endpoint
-@app.post("/predict/")
-def predict(news: NewsInput):
-    # Vectorize input text
-    new_xv_test = vectorizer.transform([news.text])
+@app.post("/predict")
+async def predict(file: UploadFile = File(...)):
+    try:
+        image_bytes = await file.read()
+        img = preprocess_image(image_bytes)
 
-    # Predictions
-    pred_LR = LR.predict(new_xv_test)[0]
-    pred_DT = DT.predict(new_xv_test)[0]
-    pred_GB = GB.predict(new_xv_test)[0]
-    pred_RF = RF.predict(new_xv_test)[0]
+        predictions = model.predict(img)
+        class_index = int(np.argmax(predictions))
+        confidence = float(np.max(predictions))
 
-    return {
-        "Logistic Regression": output_label(pred_LR),
-        "Decision Tree": output_label(pred_DT),
-        "Gradient Boosting": output_label(pred_GB),
-        "Random Forest": output_label(pred_RF)
-    }
+        return {
+            "predicted_disease": class_names[class_index],
+            "confidence": round(confidence, 4)
+        }
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": str(e)}
+        )
