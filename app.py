@@ -1,52 +1,46 @@
-from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import JSONResponse
-import tensorflow as tf
-import numpy as np
-from PIL import Image
-import io
+from fastapi import FastAPI
+from pydantic import BaseModel
+import joblib
 
-app = FastAPI(title="Potato Disease Detection API")
+# Load the saved models + vectorizer
+bundle = joblib.load("news_models.pkl")
+vectorizer = bundle["vectorizer"]
+LR = bundle["LR"]
+DT = bundle["DT"]
+GB = bundle["GB"]
+RF = bundle["RF"]
 
-# Load trained model
-model = tf.keras.models.load_model("potato_model.h5")
+# FastAPI app
+app = FastAPI(title="Fake News Detection API")
 
-# ⚠️ Change order ONLY if your training labels order was different
-class_names = [
-    "Healthy",
-    "Early Blight",
-    "Late Blight"
-]
+# Input schema
+class NewsInput(BaseModel):
+    text: str
 
-IMAGE_SIZE = 256
+# Output label function
+def output_label(n):
+    return "✅ Real News" if n == 1 else "❌ Fake News"
 
-def preprocess_image(image_bytes):
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    image = image.resize((IMAGE_SIZE, IMAGE_SIZE))
-    image = np.array(image) / 255.0   # Same normalization as training
-    image = np.expand_dims(image, axis=0)
-    return image
-
+# Root endpoint
 @app.get("/")
 def home():
-    return {"message": "Potato Disease Detection API is running"}
+    return {"message": "Welcome to Fake News Detection API! Use /predict to test."}
 
-@app.post("/predict")
-async def predict(file: UploadFile = File(...)):
-    try:
-        image_bytes = await file.read()
-        img = preprocess_image(image_bytes)
+# Prediction endpoint
+@app.post("/predict/")
+def predict(news: NewsInput):
+    # Vectorize input text
+    new_xv_test = vectorizer.transform([news.text])
 
-        predictions = model.predict(img)
-        class_index = int(np.argmax(predictions))
-        confidence = float(np.max(predictions))
+    # Predictions
+    pred_LR = LR.predict(new_xv_test)[0]
+    pred_DT = DT.predict(new_xv_test)[0]
+    pred_GB = GB.predict(new_xv_test)[0]
+    pred_RF = RF.predict(new_xv_test)[0]
 
-        return {
-            "predicted_disease": class_names[class_index],
-            "confidence": round(confidence, 4)
-        }
-
-    except Exception as e:
-        return JSONResponse(
-            status_code=400,
-            content={"error": str(e)}
-        )
+    return {
+        "Logistic Regression": output_label(pred_LR),
+        "Decision Tree": output_label(pred_DT),
+        "Gradient Boosting": output_label(pred_GB),
+        "Random Forest": output_label(pred_RF)
+    }
