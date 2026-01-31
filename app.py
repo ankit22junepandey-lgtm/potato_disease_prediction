@@ -8,10 +8,10 @@ import io
 app = FastAPI(title="Potato Disease Detection API")
 
 # Load model
-MODEL_PATH = "model (1).h5"
+MODEL_PATH = "model(2).h5"
 model = tf.keras.models.load_model(MODEL_PATH)
 
-# Class names (must match training order)
+# Must match training order
 CLASS_NAMES = ["Early Blight", "Late Blight", "Healthy"]
 
 IMAGE_SIZE = 256
