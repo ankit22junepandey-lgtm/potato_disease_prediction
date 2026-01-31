@@ -1,38 +1,49 @@
 from fastapi import FastAPI, File, UploadFile
-from tensorflow.keras.models import load_model
+from fastapi.responses import JSONResponse
+import tensorflow as tf
 import numpy as np
 from PIL import Image
 import io
-import os
 
 app = FastAPI(title="Potato Disease Detection API")
 
 # Load model
-model = load_model("model.h5")
+MODEL_PATH = "model (1).h5"
+model = tf.keras.models.load_model(MODEL_PATH)
 
+# Class names (must match training order)
 CLASS_NAMES = ["Early Blight", "Late Blight", "Healthy"]
 
-def preprocess_image(image: Image.Image):
-    image = image.resize((256, 256))
-    image = np.array(image) / 255.0
-    image = np.expand_dims(image, axis=0)
-    return image
+IMAGE_SIZE = 256
 
 @app.get("/")
 def home():
     return {"message": "Potato Disease Detection API is running"}
 
+def preprocess_image(image_bytes):
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    image = image.resize((IMAGE_SIZE, IMAGE_SIZE))
+    image = np.array(image) / 255.0
+    image = np.expand_dims(image, axis=0)
+    return image
+
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    image_bytes = await file.read()
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    processed = preprocess_image(image)
+    try:
+        image_bytes = await file.read()
+        image = preprocess_image(image_bytes)
 
-    predictions = model.predict(processed)
-    predicted_class = CLASS_NAMES[np.argmax(predictions)]
-    confidence = float(np.max(predictions))
+        predictions = model.predict(image)
+        predicted_class = CLASS_NAMES[np.argmax(predictions)]
+        confidence = float(np.max(predictions))
 
-    return {
-        "prediction": predicted_class,
-        "confidence": confidence
-    }
+        return {
+            "prediction": predicted_class,
+            "confidence": round(confidence, 4)
+        }
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
