@@ -6,8 +6,10 @@ import io
 
 app = FastAPI()
 
-# Load SavedModel
-model = tf.keras.models.load_model("my_plant_disease_model")
+# ✅ Load SavedModel (correct path)
+model = tf.keras.models.load_model(
+    "my_plant_disease_model/my_plant_disease_model"
+)
 
 CLASS_NAMES = [
     "Potato___Early_blight",
