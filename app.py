@@ -3,13 +3,18 @@ import tensorflow as tf
 import numpy as np
 from PIL import Image
 import io
+from keras.layers import TFSMLayer
+from keras.models import Sequential
 
 app = FastAPI()
 
-# ✅ Load SavedModel (correct path)
-model = tf.keras.models.load_model(
-    "my_plant_disease_model/my_plant_disease_model"
-)
+# ✅ Load SavedModel using TFSMLayer (Keras 3 compatible)
+model = Sequential([
+    TFSMLayer(
+        "my_plant_disease_model/my_plant_disease_model",
+        call_endpoint="serve"
+    )
+])
 
 CLASS_NAMES = [
     "Potato___Early_blight",
@@ -31,7 +36,9 @@ async def predict(file: UploadFile = File(...)):
     image_bytes = await file.read()
     img = preprocess(image_bytes)
 
-    predictions = model.predict(img)
+    predictions = model(img)
+    predictions = predictions.numpy()
+
     index = np.argmax(predictions[0])
     confidence = float(np.max(predictions[0]))
 
