@@ -1,34 +1,39 @@
-import os
-import tensorflow as tf
 from fastapi import FastAPI, File, UploadFile
-from PIL import Image
+import tensorflow as tf
 import numpy as np
+from PIL import Image
+import io
 
 app = FastAPI()
 
-MODEL_PATH = os.path.join(os.getcwd(), "model.h5")
-model = tf.keras.models.load_model(MODEL_PATH)
+# Load SavedModel
+model = tf.keras.models.load_model("my_plant_disease_model")
 
-CLASS_NAMES = ["Early Blight", "Late Blight", "Healthy"]
+CLASS_NAMES = [
+    "Potato___Early_blight",
+    "Potato___Late_blight",
+    "Potato___healthy"
+]
 
-def preprocess_image(image: Image.Image):
-    image = image.resize((256, 256))
-    image = np.array(image) / 255.0
-    image = np.expand_dims(image, axis=0)
-    return image
+IMAGE_SIZE = 256
 
-@app.get("/")
-def home():
-    return {"message": "Potato Disease Detection API is running"}
+def preprocess(image_bytes):
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = img.resize((IMAGE_SIZE, IMAGE_SIZE))
+    img_array = tf.keras.preprocessing.image.img_to_array(img)
+    img_array = np.expand_dims(img_array, axis=0)
+    return img_array
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    image = Image.open(file.file).convert("RGB")
-    img_array = preprocess_image(image)
-    predictions = model.predict(img_array)
-    predicted_class = CLASS_NAMES[np.argmax(predictions)]
-    confidence = float(np.max(predictions))
+    image_bytes = await file.read()
+    img = preprocess(image_bytes)
+
+    predictions = model.predict(img)
+    index = np.argmax(predictions[0])
+    confidence = float(np.max(predictions[0]))
+
     return {
-        "prediction": predicted_class,
-        "confidence": confidence
+        "prediction": CLASS_NAMES[index],
+        "confidence": round(confidence * 100, 2)
     }
